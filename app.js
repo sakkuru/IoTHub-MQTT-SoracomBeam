@@ -22,30 +22,18 @@ const client = mqtt.connect(mqttServer, {
 });
 
 const IMU = new imu.IMU();
-let delay = 1000;
+let delay = 5000;
+let sendDataTimer;
 
 const getSensorData = () => {
     return new Promise((resolve, reject) => {
-
         IMU.getValue((err, data) => {
             if (err != null) {
                 console.error('Could not read sensor data: ', err);
                 return;
             }
-
-            // console.log('Accelleration is: ', JSON.stringify(data.accel, null, '  '));
-            // console.log('Gyroscope is: ', JSON.stringify(data.gyro, null, '  '));
-            // console.log('Compass is: ', JSON.stringify(data.compass, null, '  '));
-            // console.log('Fusion data is: ', JSON.stringify(data.fusionPose, null, '  '));
-
-            // console.log('Temp is: ', data.temperature);
-            // console.log('Pressure is: ', data.pressure);
-            // console.log('Humidity is: ', data.humidity);
-
-            sense.showMessage(data.temperature.toString().slice(0, 2), [255, 0, 0]);
             resolve(data);
         });
-
     });
 };
 
@@ -57,7 +45,7 @@ client.on('connect', () => {
 });
 
 client.on('message', (topic, message) => {
-    console.log('message received!:', topic, message.toString());
+    console.log('message:', topic, message.toString());
     if (topic.includes("$iothub/methods/POST/")) {
         let methodName = topic.split("$iothub/methods/POST/")[1].split("/")[0];
         let rid = topic.split("=")[1];
@@ -65,37 +53,67 @@ client.on('message', (topic, message) => {
         if (methods[methodName]) {
             methods[methodName](rid, args);
         }
+    } else if (topic.includes("$iothub/twin/PATCH/properties/desired/")) {
+        let version = topic.split("=")[1];
+        desiredHandler(version, JSON.parse(message.toString()));
     }
 });
 
 const methods = {
-    'hoge': (rid, args) => {
+    'red': (rid, args) => {
+        matrix.clear([255, 0, 0]);
         const topic = pubMethodResponseTopic.replace("{status}", 200) + rid;
-        client.publish(topic, JSON.stringify("success!!"));
+        client.publish(topic, JSON.stringify("red!!"));
+    },
+    'white': (rid, args) => {
+        matrix.clear([255, 255, 255]);
+        const topic = pubMethodResponseTopic.replace("{status}", 200) + rid;
+        client.publish(topic, JSON.stringify("white!!"));
+    },
+    'batsu': (rid, args) => {
+        matrix.setPixels(cross);
+        const topic = pubMethodResponseTopic.replace("{status}", 200) + rid;
+        client.publish(topic, JSON.stringify("batsu!!"));
     }
 };
 
 const sendMessage = message => {
-    // client.publish(pubMessageTopic, message);
+    client.publish(pubMessageTopic, message);
+};
 
-    const reported = {
+const sendReportProperty = message => {
+    if (!message) {
+        const message = {
             sample: {
                 location: {
                     region: 'JP'
                 }
             }
         }
-        // client.publish(pubTwinReportedTopic + '1', JSON.stringify(reported));
+    }
+    client.publish(pubTwinReportedTopic + '1', JSON.stringify(reported));
+};
+
+const desiredHandler = (version, desired) => {
+    if (desired && desired.delay && 100 < Number(desired.delay)) {
+        if (sendDataTimer) clearInterval(sendDataTimer);
+        delay = Number(desired.delay);
+        sendSensorData(delay);
+    }
 }
 
-setInterval(() => {
-    getSensorData().then(sensorData => {
-        // console.log('sensorData', sensorData);
-        sendMessage(JSON.stringify(sensorData));
-    });
-}, delay);
+const sendSensorData = delay => {
+    sendDataTimer = setInterval(() => {
+        getSensorData().then(sensorData => {
+            // console.log('sensorData', sensorData);
+            sendMessage(JSON.stringify(sensorData));
+        });
+    }, delay);
+}
 
-// sense.showMessage("One small step for Pi!", [255, 0, 0]);
+sendSensorData(delay);
+
+sense.showMessage("Connecting Azure IoT with MQTT.", [255, 0, 0]);
 
 const O = [0, 0, 0];
 const X = [255, 0, 0];
@@ -110,4 +128,3 @@ const cross = [
     O, X, O, O, O, O, X, O,
     X, O, O, O, O, O, O, X,
 ];
-matrix.setPixels(cross);
