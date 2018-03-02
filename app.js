@@ -1,8 +1,10 @@
 const imu = require('node-sense-hat').Imu;
+const IMU = new imu.IMU();
 const matrix = require('node-sense-hat').Leds;
 const sense = require("sense-hat-led");
-
 const mqtt = require('mqtt');
+const os = require('os');
+
 const iotHubEndpoint = process.env.iotHubEndpoint || 'sakkuru-iot-hub.azure-devices.net';
 const deviceId = process.env.deviceId || 'raspi01';
 const mqttServer = process.env.mqttServer || 'mqtt://beam.soracom.io';
@@ -21,7 +23,6 @@ const client = mqtt.connect(mqttServer, {
     clientId: deviceId
 });
 
-const IMU = new imu.IMU();
 let delay = 5000;
 let sendDataTimer;
 
@@ -37,24 +38,17 @@ const getSensorData = () => {
     });
 };
 
-client.on('connect', () => {
-    client.subscribe(subMessageTopic);
-    client.subscribe(subTwinResponseTopic);
-    client.subscribe(subTwinDesiredTopic);
-    client.subscribe(subMethodTopic);
-});
-
 client.on('message', (topic, message) => {
     console.log('message:', topic, message.toString());
     if (topic.includes("$iothub/methods/POST/")) {
-        let methodName = topic.split("$iothub/methods/POST/")[1].split("/")[0];
-        let rid = topic.split("=")[1];
-        let args = JSON.parse(message.toString());
+        const methodName = topic.split("$iothub/methods/POST/")[1].split("/")[0];
+        const rid = topic.split("=")[1];
+        const args = JSON.parse(message.toString());
         if (methods[methodName]) {
             methods[methodName](rid, args);
         }
     } else if (topic.includes("$iothub/twin/PATCH/properties/desired/")) {
-        let version = topic.split("=")[1];
+        const version = topic.split("=")[1];
         desiredHandler(version, JSON.parse(message.toString()));
     }
 });
@@ -77,7 +71,16 @@ const methods = {
     }
 };
 
+const desiredHandler = (version, desired) => {
+    if (desired && desired.delay && 100 < Number(desired.delay)) {
+        if (sendDataTimer) clearInterval(sendDataTimer);
+        delay = Number(desired.delay);
+        sendSensorData(delay);
+    }
+}
+
 const sendMessage = message => {
+    if (typeof message != 'string') message = JSON.stringify(message);
     client.publish(pubMessageTopic, message);
 };
 
@@ -94,14 +97,6 @@ const sendReportProperty = message => {
     client.publish(pubTwinReportedTopic + '1', JSON.stringify(reported));
 };
 
-const desiredHandler = (version, desired) => {
-    if (desired && desired.delay && 100 < Number(desired.delay)) {
-        if (sendDataTimer) clearInterval(sendDataTimer);
-        delay = Number(desired.delay);
-        sendSensorData(delay);
-    }
-}
-
 const sendSensorData = delay => {
     sendDataTimer = setInterval(() => {
         getSensorData().then(sensorData => {
@@ -111,9 +106,24 @@ const sendSensorData = delay => {
     }, delay);
 }
 
-sendSensorData(delay);
+client.on('connect', () => {
+    client.subscribe(subMessageTopic);
+    client.subscribe(subTwinResponseTopic);
+    client.subscribe(subTwinDesiredTopic);
+    client.subscribe(subMethodTopic);
+});
 
-sense.showMessage("Connecting Azure IoT with MQTT.", [255, 0, 0]);
+sendSensorData(delay);
+sense.showMessage("Connecting Azure IoT with MQTT.", 0.1, [255, 0, 0]);
+const ifs = os.networkInterfaces();
+
+const ipAddress = {};
+for (let i in ifs) {
+    ifs[i][0];
+    ipAddress[i] = ifs[i][0].address;
+}
+console.log(ipAddress);
+sendMessage(ipAddress);
 
 const O = [0, 0, 0];
 const X = [255, 0, 0];
