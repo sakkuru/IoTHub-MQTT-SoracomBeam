@@ -1,0 +1,17 @@
+{
+  "name": "azure-iothub-mqtt-sample",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^5.0.1",
+    "mqtt": "^2.16.0",
+    "node-sense-hat": "0.0.2",
+    "sense-hat-led": "^1.0.1"
+  }
+}
